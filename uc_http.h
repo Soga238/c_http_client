@@ -24,6 +24,7 @@
 typedef enum http_request_method_e {
     M_GET = 0,
     M_POST,
+    M_PUT
 } http_request_method_e;
 
 /*! https://github.com/prettymuchbryce/http-status-codes */
@@ -72,12 +73,19 @@ enum proto_type_e {
     PROTO_HTTP = 0, PROTO_HTTPS
 };
 
-typedef struct http_client_t uc_http_client_t;
+typedef struct uc_http_user uc_http_user_ctx;
+struct uc_http_user {
+    char *body;
+    int body_len;
+    char *header;
+    int header_len;
+};
 
 typedef int(*uc_http_recv_cb_t)
     (void *http, const char *data, int size, int total, void *user);
 
-struct http_client_t {
+typedef struct uc_http_client uc_http_client_t;
+struct uc_http_client {
     FILE *pf;
 
     char *filename;
@@ -160,6 +168,14 @@ HTTP_API int uc_http_sync_download_file(uc_http_client_t *http,
  */
 HTTP_API const char *uc_http_sync_get(uc_http_client_t *http,
                                       const char *url);
+
+HTTP_API const char *uc_http_sync_post(uc_http_client_t *http,
+                                       const char *url,
+                                       uc_http_user_ctx *ctx);
+
+HTTP_API const char *uc_http_sync_put(uc_http_client_t *http,
+                                      const char *url,
+                                      uc_http_user_ctx *ctx);
 
 /**
  *  \brief: 完成一次http请求，并把应答写入指定的文件中，若文件不存在则创建文件

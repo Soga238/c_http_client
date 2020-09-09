@@ -22,8 +22,8 @@
 typedef struct {
     struct http_parser_url *parser;
     const char *url;
-    const char *post_data;
-    int post_data_len;
+    const char *body;
+    int body_len;
     const char *user_header;
     int user_header_len;
 } request_info_t;
@@ -164,11 +164,14 @@ static int http_read_write(uc_http_client_t *http, const char *data,
 /**
  *  \brief: 发送固定内容的 http 请求包
  *  \param[in]: http 指向 uc_http_client_t 类型的结构体指针
- *  \param[in]: info 用户数据
+ *  \param[in]: ctx 用户数据
  *  \retval:   ERR_OK
  *             ERR_SOCKET_WRITE
  */
-static int http_send_request(uc_http_client_t *http, request_info_t *info)
+static int http_send_request(uc_http_client_t *http,
+                             const char *url,
+                             struct http_parser_url *parser,
+                             uc_http_user_ctx *ctx)
 {
     const char *offset;
     int len;
@@ -179,25 +182,25 @@ static int http_send_request(uc_http_client_t *http, request_info_t *info)
         CHECK_RW(http_read_write(http, "POST ", 5, 0));
     }
 
-    if (IS_BIT_SET(info->parser->field_set, UF_PATH)) {
-        offset = info->url + info->parser->field_data[UF_PATH].off;
-        len = info->parser->field_data[UF_PATH].len;
+    if (IS_BIT_SET(parser->field_set, UF_PATH)) {
+        offset = url + parser->field_data[UF_PATH].off;
+        len = parser->field_data[UF_PATH].len;
         CHECK_RW(http_read_write(http, offset, len, 0));
     } else {
         CHECK_RW(http_read_write(http, "/", 1, 0));
     }
 
-    if (IS_BIT_SET(info->parser->field_set, UF_QUERY)) {
+    if (IS_BIT_SET(parser->field_set, UF_QUERY)) {
         CHECK_RW(http_read_write(http, "?", 1, 0));
-        offset = info->url + info->parser->field_data[UF_QUERY].off;
-        len = info->parser->field_data[UF_QUERY].len;
+        offset = url + parser->field_data[UF_QUERY].off;
+        len = parser->field_data[UF_QUERY].len;
         CHECK_RW(http_read_write(http, offset, len, 0));
     }
 
     CHECK_RW(http_read_write(http, " HTTP/1.1\r\nHost:", 16, 0));
 
-    offset = info->url + info->parser->field_data[UF_HOST].off;
-    len = info->parser->field_data[UF_HOST].len;
+    offset = url + parser->field_data[UF_HOST].off;
+    len = parser->field_data[UF_HOST].len;
     CHECK_RW(http_read_write(http, offset, len, 0));
 
     offset = CRLF CONNECT_STR ACCEPT_STR DEFAULT_USER_AGENT_STR;
@@ -205,22 +208,26 @@ static int http_send_request(uc_http_client_t *http, request_info_t *info)
         + M_STRLEN(DEFAULT_USER_AGENT_STR);
     CHECK_RW(http_read_write(http, offset, len, 0));
 
-    if (info->user_header != NULL) {
+    if (NULL == ctx) {
+        return ERR_OK;
+    }
+
+    if (ctx->header != NULL) {
         CHECK_RW(
-            http_read_write(http, info->user_header, info->user_header_len, 0)
+            http_read_write(http, ctx->header, ctx->header_len, 0)
         );
     }
 
-    if (info->post_data && info->post_data_len > 0) {
-        char *len_data = M_HTTP_MALLOC(256);
+    if (ctx->body && ctx->body_len > 0) {
+        char *len_data = M_HTTP_MALLOC(128);
         if (len_data != NULL) {
             len = M_SPRINTF(len_data, "%s:%d\r\n",
                             CONTENT_TYPE_STR CONTENT_LENGTH_STR,
-                            info->post_data_len);
+                            ctx->body_len);
             CHECK_RW(http_read_write(http, len_data, len, 0));
             CHECK_RW(http_read_write(http, CRLF, 2, 0));
             CHECK_RW(
-                http_read_write(http, info->post_data, info->post_data_len, 0)
+                http_read_write(http, ctx->body, ctx->body_len, 0)
             );
             M_HTTP_FREE(len_data);
         }
@@ -564,21 +571,10 @@ static int http_wait_response(uc_http_client_t *http)
  */
 static int sync_request(uc_http_client_t *http,
                         const char *url,
-                        const char *post_data,
-                        int post_data_len,
-                        const char *user_header,
-                        int user_header_len)
+                        uc_http_user_ctx *ctx)
 {
     int r;
     struct http_parser_url parser;
-
-    request_info_t info = {
-        .post_data = post_data,
-        .post_data_len = post_data_len,
-        .user_header = user_header,
-        .user_header_len = user_header_len,
-        .url = url
-    };
 
     if (0 != http_parser_parse_url(url, M_STRLEN(url), 0, &parser)) {
         return (http->error_code = ERR_URL_INVALID);
@@ -589,8 +585,7 @@ static int sync_request(uc_http_client_t *http,
         return (http->error_code = r);
     }
 
-    info.parser = &parser;
-    r = http_send_request(http, &info);
+    r = http_send_request(http, url, &parser, ctx);
     if (ERR_OK != r) {
         return (http->error_code = r);
     }
@@ -644,7 +639,7 @@ HTTP_API int uc_http_sync_download_file(uc_http_client_t *http, const char *url,
         return http->error_code = ERR_OUT_MEMORY;
     }
 
-    if (http_internal_sync_request(http, url, 0, 0, 0, 0) == ERR_OK) {
+    if (sync_request(http, url, NULL) == ERR_OK) {
         return ERR_OK;
     }
 
@@ -667,7 +662,43 @@ HTTP_API const char *uc_http_sync_get(uc_http_client_t *http,
     http->method = M_GET;
     http->download = http->cancel = http->exit = http->redirect = 0;
 
-    if (http_internal_sync_request(http, url, 0, 0, 0, 0) == ERR_OK) {
+    if (sync_request(http, url, NULL) == ERR_OK) {
+        return http->body;
+    }
+
+    return NULL;
+}
+
+HTTP_API const char *uc_http_sync_post(uc_http_client_t *http,
+                                       const char *url,
+                                       uc_http_user_ctx *ctx)
+{
+    if (http == NULL) {
+        return NULL;
+    }
+
+    http->method = M_POST;
+    http->download = http->cancel = http->exit = http->redirect = 0;
+
+    if (sync_request(http, url, ctx) == ERR_OK) {
+        return http->body;
+    }
+
+    return NULL;
+}
+
+HTTP_API const char *uc_http_sync_put(uc_http_client_t *http,
+                                      const char *url,
+                                      uc_http_user_ctx *ctx)
+{
+    if (http == NULL) {
+        return NULL;
+    }
+
+    http->method = M_PUT;
+    http->download = http->cancel = http->exit = http->redirect = 0;
+
+    if (sync_request(http, url, ctx) == ERR_OK) {
         return http->body;
     }
 
