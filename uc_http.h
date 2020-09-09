@@ -121,6 +121,13 @@ struct uc_http_client {
 };
 
 /* Global define ---------------------------------------------------*/
+#define CONTENT_TYPE_X_WWW_FORM_URLENCODED \
+            "Content-Type: application/x-www-form-urlencoded\r\n"
+#define CONTENT_TYPE_FORM_DARA \
+            "Content-Type: multipart/form-data\r\n"
+#define CONTENT_TYPE_JSON \
+            "Content-Type: application/json\r\n"
+
 /* Global macro ----------------------------------------------------*/
 /* Global variables ------------------------------------------------*/
 /* Global function prototypes --------------------------------------*/

@@ -39,12 +39,13 @@ typedef enum {
 #define HTTP_PORT               80
 #define HTTPS_PORT              443
 
-#define DEFAULT_USER_AGENT_STR  "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:29.0) Gecko/20100101 Firefox/29.0\r\n"
+#define USER_AGENT_STR          "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:29.0) Gecko/20100101 Firefox/29.0\r\n"
 #define CONNECT_STR             "Connection: close\r\n"
 #define ACCEPT_STR              "Accept: */*\r\n"
 #define CONTENT_LENGTH_STR      "Content-Length"
-#define CONTENT_TYPE_STR        "Content-Type:application/x-www-form-urlencoded\r\n"
 #define CRLF                    "\r\n"
+
+#define DEFAULT_HEADER          USER_AGENT_STR""CONNECT_STR""ACCEPT_STR
 
 /* Private macro ---------------------------------------------------*/
 #define IS_BIT_SET(__DATA, __MASK)  ((unsigned)(__DATA) & (1UL << (unsigned)(__MASK)))
@@ -132,7 +133,7 @@ static int http_read_write(uc_http_client_t *http, const char *data,
                            int len, int read)
 {
     int n = 0, r;
-
+    HTTP_PRINTF("%s", data);
     while ((n < len) && (!http->exit)) {
         if (http->proto_type == PROTO_HTTPS) {
 #if defined(FT_SUPPORT_HTTPS)
@@ -180,6 +181,8 @@ static int http_send_request(uc_http_client_t *http,
         CHECK_RW(http_read_write(http, "GET ", 4, 0));
     } else if (http->method == M_POST) {
         CHECK_RW(http_read_write(http, "POST ", 5, 0));
+    } else if (http->method == M_PUT) {
+        CHECK_RW(http_read_write(http, "PUT ", 4, 0));
     }
 
     if (IS_BIT_SET(parser->field_set, UF_PATH)) {
@@ -197,40 +200,35 @@ static int http_send_request(uc_http_client_t *http,
         CHECK_RW(http_read_write(http, offset, len, 0));
     }
 
-    CHECK_RW(http_read_write(http, " HTTP/1.1\r\nHost:", 16, 0));
+    CHECK_RW(http_read_write(http, " HTTP/1.1\r\nHost: ", 17, 0));
 
     offset = url + parser->field_data[UF_HOST].off;
     len = parser->field_data[UF_HOST].len;
     CHECK_RW(http_read_write(http, offset, len, 0));
 
-    offset = CRLF CONNECT_STR ACCEPT_STR DEFAULT_USER_AGENT_STR;
-    len = 2 + M_STRLEN(CONNECT_STR) + M_STRLEN(ACCEPT_STR)
-        + M_STRLEN(DEFAULT_USER_AGENT_STR);
+    offset = CRLF DEFAULT_HEADER;
+    len = 2 + sizeof(DEFAULT_HEADER) - 1; /*! 0 占用尾部空间 */
     CHECK_RW(http_read_write(http, offset, len, 0));
 
     if (NULL == ctx) {
+        CHECK_RW(http_read_write(http, CRLF, 2, 0));
         return ERR_OK;
     }
 
-    if (ctx->header != NULL) {
+    if (ctx->header && (ctx->header_len > 0)) {
         CHECK_RW(
             http_read_write(http, ctx->header, ctx->header_len, 0)
         );
     }
 
-    if (ctx->body && ctx->body_len > 0) {
-        char *len_data = M_HTTP_MALLOC(128);
-        if (len_data != NULL) {
-            len = M_SPRINTF(len_data, "%s:%d\r\n",
-                            CONTENT_TYPE_STR CONTENT_LENGTH_STR,
-                            ctx->body_len);
-            CHECK_RW(http_read_write(http, len_data, len, 0));
-            CHECK_RW(http_read_write(http, CRLF, 2, 0));
-            CHECK_RW(
-                http_read_write(http, ctx->body, ctx->body_len, 0)
-            );
-            M_HTTP_FREE(len_data);
-        }
+    if (ctx->body && (ctx->body_len > 0)) {
+        char len_data[32];
+        M_SPRINTF(len_data, "%s: %d\r\n", CONTENT_LENGTH_STR, ctx->body_len);
+        CHECK_RW(http_read_write(http, len_data, len, 0));
+        CHECK_RW(http_read_write(http, CRLF, 2, 0));
+        CHECK_RW(
+            http_read_write(http, ctx->body, ctx->body_len, 0)
+        );
     } else {
         CHECK_RW(http_read_write(http, CRLF, 2, 0));
     }
