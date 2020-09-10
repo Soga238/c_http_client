@@ -112,7 +112,6 @@ struct uc_http_client {
 
     int error_code;
     unsigned short status_code;
-    char parser_state;
 
     unsigned char cancel : 1;
     unsigned char exit : 1;
@@ -167,7 +166,7 @@ HTTP_API int uc_http_sync_download_file(uc_http_client_t *http,
                                         const char *filename);
 
 /**
- *  \brief: 完成一次http请求，保存应答内容到内存数组中
+ *  \brief: 完成一次http GET请求，保存应答内容到内存数组中
  *  \param[in]: http     指向 uc_http_client_t 类型的结构体指针
  *  \param[in]: url      服务器域名或者ip地址
  *  \retval: 内存数组地址
@@ -175,10 +174,26 @@ HTTP_API int uc_http_sync_download_file(uc_http_client_t *http,
 HTTP_API const char *uc_http_sync_get(uc_http_client_t *http,
                                       const char *url);
 
+/**
+ *  \brief: 完成一次http PUT请求，保存应答内容到内存数组中
+ *  \param[in]: http  指向 uc_http_client_t 类型的结构体指针
+ *  \param[in]: url   服务器域名或者ip地址
+ *  \param[in]: ctx   用户传递的结构体指针，保存了用户指定发送的 header 和 body 内容
+ *                    程序默认发送 User-Agent, Connection, Accept 字段
+ *  \retval: 内存数组地址
+ */
 HTTP_API const char *uc_http_sync_post(uc_http_client_t *http,
                                        const char *url,
                                        uc_http_user_ctx *ctx);
 
+/**
+ *  \brief: 完成一次http PUT请求，保存应答内容到内存数组中
+ *  \param[in]: http  指向 uc_http_client_t 类型的结构体指针
+ *  \param[in]: url   服务器域名或者ip地址
+ *  \param[in]: ctx   用户传递的结构体指针，保存了用户指定发送的 header 和 body 内容
+ *                    程序默认发送 User-Agent, Connection, Accept 字段
+ *  \retval: 内存数组地址
+ */
 HTTP_API const char *uc_http_sync_put(uc_http_client_t *http,
                                       const char *url,
                                       uc_http_user_ctx *ctx);
