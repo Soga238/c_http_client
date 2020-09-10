@@ -128,15 +128,11 @@ static int http_connect_host(uc_http_client_t *http,
  *  \param[in]: read 1 表示读取 0 表示写入
  *  \retval:    -1 读写操作异常
  *              n 读取或写入的数据长度
- */char xtemp[512];
+ */
 static int http_read_write(uc_http_client_t *http, const char *data,
                            int len, int read)
 {
     int n = 0, r;
-    if (read == 0) {
-        M_MEMCPY(xtemp, data, len);xtemp[len] = 0;
-        HTTP_PRINTF("%s", xtemp);
-    }
 
     while ((n < len) && (!http->exit)) {
         if (http->proto_type == PROTO_HTTPS) {
@@ -323,7 +319,7 @@ static int on_header_field_cb(http_parser *parser, const char *at,
 {
     uc_http_client_t *http = (uc_http_client_t *) parser->data;
 
-    HTTP_PRINTF("Header field: %.*s\n", (int) length, at);
+    // HTTP_PRINTF("Header field: %.*s\n", (int) length, at);
 
     http->parser_state = STATE_ON_FILED;
     return save_field_value(&http->header_field, &http->header_field_size,
@@ -345,7 +341,7 @@ static int on_header_value_cb(http_parser *parser, const char *at,
     uc_http_client_t *http = (uc_http_client_t *) parser->data;
     int rc;
 
-    HTTP_PRINTF("Header value: %.*s\n", (int) length, at);
+    // HTTP_PRINTF("Header value: %.*s\n", (int) length, at);
 
     http->parser_state = STATE_ON_VALUE;
     rc = save_field_value(&http->header_value, &http->header_value_size,
@@ -527,7 +523,7 @@ static int http_wait_response(uc_http_client_t *http)
     do {
         read = http_read_write(http, buf, CONFIG_BODY_MAX_SIZE - 1, 1);
         if (read > 0) {
-            HTTP_PRINTF("%s", buf);
+            // HTTP_PRINTF("%s", buf);
             http_parser_execute(&parser, &setting, buf, read);
             if (HPE_OK == HTTP_PARSER_ERRNO(&parser)) {
                 if (http->redirect) {

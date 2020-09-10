@@ -112,6 +112,7 @@ struct uc_http_client {
 
     int error_code;
     unsigned short status_code;
+    char parser_state;
 
     unsigned char cancel : 1;
     unsigned char exit : 1;
