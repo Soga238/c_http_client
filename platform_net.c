@@ -112,7 +112,7 @@ int platform_net_connect(platform_net_ctx_t *ctx, const char *host,
         }
     }
 
-    if (cur->ai_family != AF_INET) {
+    if (NULL == cur || cur->ai_family != AF_INET) {
         goto __exit;
     }
 

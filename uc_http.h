@@ -127,7 +127,6 @@ struct uc_http_client {
             "Content-Type: multipart/form-data\r\n"
 #define CONTENT_TYPE_JSON \
             "Content-Type: application/json\r\n"
-
 /* Global macro ----------------------------------------------------*/
 /* Global variables ------------------------------------------------*/
 /* Global function prototypes --------------------------------------*/

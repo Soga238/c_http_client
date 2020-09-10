@@ -128,12 +128,16 @@ static int http_connect_host(uc_http_client_t *http,
  *  \param[in]: read 1 表示读取 0 表示写入
  *  \retval:    -1 读写操作异常
  *              n 读取或写入的数据长度
- */
+ */char xtemp[512];
 static int http_read_write(uc_http_client_t *http, const char *data,
                            int len, int read)
 {
     int n = 0, r;
-    HTTP_PRINTF("%s", data);
+    if (read == 0) {
+        M_MEMCPY(xtemp, data, len);xtemp[len] = 0;
+        HTTP_PRINTF("%s", xtemp);
+    }
+
     while ((n < len) && (!http->exit)) {
         if (http->proto_type == PROTO_HTTPS) {
 #if defined(FT_SUPPORT_HTTPS)
@@ -159,7 +163,7 @@ static int http_read_write(uc_http_client_t *http, const char *data,
         }
     }
 
-    return n;
+    return len;
 }
 
 /**
@@ -209,6 +213,7 @@ static int http_send_request(uc_http_client_t *http,
     offset = CRLF DEFAULT_HEADER;
     len = 2 + sizeof(DEFAULT_HEADER) - 1; /*! 0 占用尾部空间 */
     CHECK_RW(http_read_write(http, offset, len, 0));
+    // CHECK_RW(http_read_write(http, CRLF, 2, 0));
 
     if (NULL == ctx) {
         CHECK_RW(http_read_write(http, CRLF, 2, 0));
@@ -223,12 +228,10 @@ static int http_send_request(uc_http_client_t *http,
 
     if (ctx->body && (ctx->body_len > 0)) {
         char len_data[32];
-        M_SPRINTF(len_data, "%s: %d\r\n", CONTENT_LENGTH_STR, ctx->body_len);
+        len = M_SNPRINTF(len_data, 32, "%s: %d\r\n", CONTENT_LENGTH_STR, ctx->body_len);
         CHECK_RW(http_read_write(http, len_data, len, 0));
         CHECK_RW(http_read_write(http, CRLF, 2, 0));
-        CHECK_RW(
-            http_read_write(http, ctx->body, ctx->body_len, 0)
-        );
+        CHECK_RW(http_read_write(http, ctx->body, ctx->body_len, 0));
     } else {
         CHECK_RW(http_read_write(http, CRLF, 2, 0));
     }
@@ -255,7 +258,7 @@ static int save_field_value(char **used,
     unsigned short new_size = *used_size;
 
     if (*used == NULL) {
-        /*! 初始给一个较大的内存空间，减少 malloc 的次数*/
+        /*! Initially give a larger memory space, reduce the number of malloc */
         new_size = length > MAXIMUM_SAVE_SIZE ? length : MAXIMUM_SAVE_SIZE;
         new = (char *) M_HTTP_CALLOC(1, new_size + 1);
         if (new == NULL) {
@@ -290,7 +293,7 @@ static int parser_field_value(uc_http_client_t *http)
         return -1;
     }
 
-    // Location: xxx 重定向地址
+    // Location: xxx
     if (M_STRICMP(http->header_field, "Location") == 0) {
         FREE_MEMBER(http->redirect_url);
         http->redirect_url = M_STRDUP(http->header_value);
@@ -414,7 +417,7 @@ static int on_headers_complete_cb(http_parser *parser)
  *  \param[in]: length 字符串长度
  *  \retval:    0
  */
-static int on_download_file_cb(http_parser *parser, const char *at,
+static int on_download_cb(http_parser *parser, const char *at,
                                size_t length)
 {
     uc_http_client_t *http = (uc_http_client_t *) parser->data;
@@ -440,7 +443,6 @@ static int on_download_file_cb(http_parser *parser, const char *at,
 
     if (http->pf != NULL) {
         fwrite(at, 1, length, http->pf);
-        /* report download progress */
         if (http->recv_cb) {
             http->recv_cb(http, at, length, (int) http->content_length,
                           http->ctx);
@@ -511,10 +513,7 @@ static int http_wait_response(uc_http_client_t *http)
     setting.on_header_field = on_header_field_cb;
     setting.on_header_value = on_header_value_cb;
     setting.on_headers_complete = on_headers_complete_cb;
-    setting.on_body = http->download ? on_download_file_cb : on_body_cb;
-    // setting.on_status = on_status_cb;
-    // setting.on_chunk_header = on_chunk_header_cb;
-    // setting.on_chunk_complete = on_chunk_complete_cb;
+    setting.on_body = http->download ? on_download_cb : on_body_cb;
     http_parser_init(&parser, HTTP_RESPONSE);
 
     http->parser_state = STATE_ON_INIT;
@@ -528,6 +527,7 @@ static int http_wait_response(uc_http_client_t *http)
     do {
         read = http_read_write(http, buf, CONFIG_BODY_MAX_SIZE - 1, 1);
         if (read > 0) {
+            HTTP_PRINTF("%s", buf);
             http_parser_execute(&parser, &setting, buf, read);
             if (HPE_OK == HTTP_PARSER_ERRNO(&parser)) {
                 if (http->redirect) {
@@ -535,7 +535,8 @@ static int http_wait_response(uc_http_client_t *http)
                     break;
                 }
             } else {
-                rc = ERR_PARSE_REP;
+                http->exit = 1;
+                http->error_code = ERR_PARSE_REP;
                 break;
             }
         }
@@ -548,7 +549,7 @@ static int http_wait_response(uc_http_client_t *http)
     }
 
     if (http->cancel || http->exit) {
-        /*! 非正常结束 */
+        /*! Abnormal ending */
         return http->error_code;
     } else {
         http->status_code = parser.status_code;
@@ -563,6 +564,8 @@ static int http_wait_response(uc_http_client_t *http)
 /**
  *  \brief: 完成一次http的请求过程
  *  \param[in]: http    指向 uc_http_client_t 类型的结构体指针
+ *  \param[in]: url     服务器域名或者ip地址
+ *  \param[in]: ctx     用户传递的结构体指针，保存了用户指定发送的header和body内容
  *  \retval:    ERR_OK
  *              ERR_PARSE_REP
  *              ERR_NO_RESOURCE
@@ -623,7 +626,7 @@ HTTP_API int uc_http_sync_download_file(uc_http_client_t *http, const char *url,
                                         const char *filename)
 {
     if ((http == NULL) || filename == NULL) {
-        return http->error_code = ERR_INVALID_PARAM;
+        return ERR_INVALID_PARAM;
     }
 
     http->method = M_GET;
@@ -645,7 +648,7 @@ HTTP_API int uc_http_sync_download_file(uc_http_client_t *http, const char *url,
 }
 
 /**
- *  \brief: 完成一次http请求，保存应答内容到内存数组中
+ *  \brief: 完成一次http GET请求，保存应答内容到内存数组中
  *  \param[in]: http     指向 uc_http_client_t 类型的结构体指针
  *  \param[in]: url      服务器域名或者ip地址
  *  \retval: 内存数组地址
@@ -667,6 +670,14 @@ HTTP_API const char *uc_http_sync_get(uc_http_client_t *http,
     return NULL;
 }
 
+/**
+ *  \brief: 完成一次http POST请求，保存应答内容到内存数组中
+ *  \param[in]: http  指向 uc_http_client_t 类型的结构体指针
+ *  \param[in]: url   服务器域名或者ip地址
+ *  \param[in]: ctx   用户传递的结构体指针，保存了用户指定发送的 header 和 body 内容
+ *                    程序默认发送 User-Agent, Connection, Accept 字段
+ *  \retval: 内存数组地址
+ */
 HTTP_API const char *uc_http_sync_post(uc_http_client_t *http,
                                        const char *url,
                                        uc_http_user_ctx *ctx)
@@ -685,6 +696,14 @@ HTTP_API const char *uc_http_sync_post(uc_http_client_t *http,
     return NULL;
 }
 
+/**
+ *  \brief: 完成一次http PUT请求，保存应答内容到内存数组中
+ *  \param[in]: http  指向 uc_http_client_t 类型的结构体指针
+ *  \param[in]: url   服务器域名或者ip地址
+ *  \param[in]: ctx   用户传递的结构体指针，保存了用户指定发送的 header 和 body 内容
+ *                    程序默认发送 User-Agent, Connection, Accept 字段
+ *  \retval: 内存数组地址
+ */
 HTTP_API const char *uc_http_sync_put(uc_http_client_t *http,
                                       const char *url,
                                       uc_http_user_ctx *ctx)
