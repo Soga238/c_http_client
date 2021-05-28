@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 /* Includes --------------------------------------------------------*/
-#include "./platform_config.h"
+#include "platform_config.h"
 
 /* Global variables ------------------------------------------------*/
 /* Global typedef --------------------------------------------------*/

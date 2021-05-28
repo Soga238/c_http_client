@@ -26,7 +26,7 @@ extern "C" {
 #define CONFIG_BODY_MAX_SIZE    4096         // body buf max size
 
 //#define HTTPS_USE_OPENSSL       1
-//#define HTTPS_USE_KRYPTON       1
+#define HTTPS_USE_KRYPTON       1
 //#define HTTPS_USE_WOLFSSL       1
 //#define HTTPS_USE_MBEDTLS       1
 

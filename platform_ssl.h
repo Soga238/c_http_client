@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 /* Includes --------------------------------------------------------*/
-#include "./platform_data_types.h"
+#include "platform_data_types.h"
 
 /* Global variables ------------------------------------------------*/
 /* Global typedef --------------------------------------------------*/
